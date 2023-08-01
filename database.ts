@@ -1,14 +1,17 @@
+import { IAssetBlock } from 'banano-nft-crawler/dist/interfaces/asset-block';
 import type { Collection } from 'mongodb';
 import { connect } from './mongo.js';
 import type { NFTMetadata } from './crawl.js';
 import minters_array from './minters.json';
 
+export type Address = `ban_${string}`;
+
 export interface Minter {
   name?: string,
   description?: string,
   external_url?: string,
-  address: `ban_${string}`,
-  head_hash: string,
+  address: Address,
+  head_hash?: string,
 }
 
 export interface NFTVersion {
@@ -18,23 +21,27 @@ export interface NFTVersion {
 }
 
 export interface NFT {
-  minter_address: `ban_${string}`,
+  minter_address: Address,
   supply_hash: string,
+  //metadata
+  metadata_representative: Address,
   nft_metadata: NFTMetadata,
   //head hash of finding minting blocks for this nft
   head_hash: string,
   //stuff known from the supply block
   version: NFTVersion,
   max_supply: number, //max supply of 0 means infinite supply
-  //
 }
 
 export interface MintedNFT {
   supply_hash: string,
-  mint_hash: string,
-  owner: `ban_${string}` | "unknown",
-  status: string, //change to enum probably
-  head_hash: string,
+  mint_hash: string, //aka asset representative
+  owner: Address | "unknown",
+  locked: boolean,
+  //head_hash: string,
+  metadata_representative: Address, //keep in two places for convenience
+  mint_type: "change" | "send",
+  asset_chain: IAssetBlock[], //history of the asset
   //
 }
 
@@ -75,6 +82,26 @@ export async function add_minters() {
       address: current_minters[i].address,
     });
   }
+}
+
+async function get_minter(minter_address: string): Promise<Minter> {
+  return await minters.findOne({
+    minter_address,
+  }, {
+    projection: {
+      //exclude _id
+      _id: 0,
+    },
+  }) as unknown as Minter;
+}
+
+//yeah I know there's a better way to do this with like $set or something
+export async function update_minter_head_hash(minter_address: Address, head_hash: string) {
+  let minter: Minter = await get_minter(minter_address);
+  minter.head_hash = head_hash;
+  await minters.replaceOne({
+    address: minter_address,
+  }, minter);
 }
 
 export async function get_all_nfts(): Promise<NFT[]> {

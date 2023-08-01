@@ -1,9 +1,12 @@
 import { NanoNode } from 'nano-account-crawler/dist/nano-node';
-import { INanoBlock } from "nano-account-crawler/dist/nano-interfaces";
+import type { INanoBlock } from 'nano-account-crawler/dist/nano-interfaces';
 import { SupplyBlocksCrawler } from 'banano-nft-crawler/dist/supply-blocks-crawler';
 import { MintBlocksCrawler } from 'banano-nft-crawler/dist/mint-blocks-crawler';
 import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler';
-import { add_nft, add_minted_nft, NFT, MintedNFT } from './database.js';
+import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply';
+import { accountToIpfsCidV0 } from 'nano-ipfs/dist';
+import { BananoUtil } from '@bananocoin/bananojs';
+import { add_nft, add_minted_nft, Address, NFT, MintedNFT } from './database.js';
 
 import fetch from 'node-fetch';
 
@@ -38,9 +41,7 @@ function ipfs_to_metadata(ipfs_json: any): NFTMetadata | undefined {
   //tips
   if (ipfs_json.properties?.tips) {
     if (!ipfs_json.properties.tips.every(
-      (tip) => {
-        typeof tip.name === "string" && typeof tip.account === "string"
-      }
+      (tip) => typeof tip.name === "string" && typeof tip.account === "string"
     )) return undefined;
   }
   return {
@@ -68,18 +69,39 @@ async function get_nft_metadata(ipfs_cid: string): Promise<NFTMetadata | undefin
 }
 
 //get (new) supply blocks (nfts) for a minter, get metadata, add to db
-export async function crawl_supply_blocks(minter_address: `ban_${string}`, head_hash?: string) {
+export async function crawl_supply_blocks(minter_address: Address, head_hash?: string) {
   let supply_crawler = new SupplyBlocksCrawler(minter_address, head_hash);
   let new_supply_blocks: INanoBlock[] = await supply_crawler.crawl(banano_node);
   for (let i=0; i < new_supply_blocks.length; i++) {
-    //
-    //get_nft_metadata
+    let supply_block: INanoBlock = new_supply_blocks[i];
+    let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
+    let nft_metadata: NFTMetadata = await get_nft_metadata(accountToIpfsCidV0(metadata_representative));
+    let supply_info = parseSupplyRepresentative(supply_block.representative);
+    let major_version: number = Number(supply_info.version.split(".")[0]);
+    let minor_version: number = Number(supply_info.version.split(".")[1]);
+    let patch_version: number = Number(supply_info.version.split(".")[2]);
+    let nft: NFT = {
+      minter_address: supply_block.account as Address,
+      supply_hash: supply_block.hash,
+      metadata_representative: metadata_representative,
+      nft_metadata,
+      version: {
+        major_version,
+        minor_version,
+        patch_version,
+      },
+      max_supply: Number(supply_info.maxSupply),
+      head_hash: supply_block.hash,
+    };
+    //add to db
+    await add_nft(nft, true);
+    //update minter head hash
     //
   }
 }
 
-//crawl for **new** minted nfts, then `crawl_nft` for them
-export async function crawl_minted(minter_address: `ban_${string}`, supply_hash: string, head_hash?: string) {
+//crawl for **new** minted nfts
+export async function crawl_minted(minter_address: Address, supply_hash: string, head_hash?: string) {
   let mint_crawler = new MintBlocksCrawler(minter_address, supply_hash);
   if (head_hash) {
     await mint_crawler.crawlFromFrontier(banano_node, head_hash);
@@ -88,13 +110,69 @@ export async function crawl_minted(minter_address: `ban_${string}`, supply_hash:
   }
   let new_mint_blocks: INanoBlock[] = mint_crawler.mintBlocks;
   for (let i=0; i < new_mint_blocks.length; i++) {
-    //
+    let mint_block: INanoBlock = new_mint_blocks[i];
+    let minted_nft: MintedNFT = {
+      supply_hash,
+      mint_hash: mint_block.hash,
+      owner: "unknown",
+      locked: false,
+      metadata_representative: mint_block.representative as Address,
+      mint_type: mint_block.subtype as "send" | "change",
+      asset_chain: [],
+    };
+    await add_minted_nft(minted_nft, true);
   }
 }
 
+export interface SpyglassBlock {
+  amount: number,
+  amountRaw: `${number}`,
+  balance: `${number}`,
+  blockAccount: Address,
+  confirmed: boolean,
+  contents: {
+    account: Address,
+    balance: `${number}`,
+    link: string,
+    linkAsAccount: string,
+    previous: string,
+    representative: Address,
+    signature: string,
+    type: string,
+    work: string,
+  },
+  hash: string,
+  height: number,
+  sourceAccount: string,
+  subtype: string,
+  timestamp: number,
+}
+
 //for a specific minted nft, update owner/status/etc if needed (or add to db if new)
-export async function crawl_nft(minter_address: `ban_${string}`, mint_block: string, head_hash?: string) {
+export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) {
   //mint_block needs to be INanoBlock
-  //let asset_crawler = new AssetCrawler(minter_address, mint_block);
-  //
+  let spyglass_block: SpyglassBlock = await (await fetch(`https://api.spyglass.pw/banano/v1/block/${minted_nft.mint_hash}`)).json() as SpyglassBlock;
+  //but representative and hash are the only ones used, rest can be dummy
+  let block: INanoBlock = {
+    type: spyglass_block.contents.type as "state",
+    subtype: spyglass_block.subtype as "send" | "receive" | "open" | "change" | "epoch",
+    account: spyglass_block.contents.account,
+    amount: spyglass_block.amountRaw,
+    balance: spyglass_block.balance,
+    representative: spyglass_block.contents.representative,
+    previous: spyglass_block.contents.previous,
+    hash: spyglass_block.hash,
+    link: spyglass_block.contents.link,
+    height: `${spyglass_block.height}`,
+    work: spyglass_block.contents.work,
+    signature: spyglass_block.contents.signature,
+  };
+  let asset_crawler = new AssetCrawler(minter_address, block);
+  //asset_crawler.head = head_hash;
+  asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain)
+  await asset_crawler.crawl(banano_node);
+  minted_nft.asset_chain = asset_crawler.assetChain;
+  minted_nft.owner = asset_crawler.owner as Address;
+  minted_nft.locked = asset_crawler.locked;
+  await add_minted_nft(minted_nft);
 }
