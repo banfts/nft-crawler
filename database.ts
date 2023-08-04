@@ -66,6 +66,7 @@ export async function add_minters() {
   let current_minters: Minter[] = await get_all_minters(); //Minter[], almost
   for (let i=0; i < minters_array.length; i++) {
     let minter: Minter = minters_array[i] as Minter;
+    console.log(`Adding minter ${minter.address} ${minter.name ? `(${minter.name})` : ""}`);
     let found = current_minters.find((m) => m.address === minter.address);
     if (found) {
       await minters.replaceOne({
@@ -86,7 +87,7 @@ export async function add_minters() {
 
 async function get_minter(minter_address: string): Promise<Minter> {
   return await minters.findOne({
-    minter_address,
+    address: minter_address,
   }, {
     projection: {
       //exclude _id

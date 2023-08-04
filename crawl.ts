@@ -6,7 +6,7 @@ import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler';
 import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply';
 import { accountToIpfsCidV0 } from 'nano-ipfs/dist';
 import { BananoUtil } from '@bananocoin/bananojs';
-import { add_nft, add_minted_nft, Address, NFT, MintedNFT } from './database.js';
+import { add_nft, add_minted_nft, update_minter_head_hash, Address, NFT, MintedNFT } from './database.js';
 
 import fetch from 'node-fetch';
 
@@ -76,6 +76,7 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
     let supply_block: INanoBlock = new_supply_blocks[i];
     let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
     let nft_metadata: NFTMetadata = await get_nft_metadata(accountToIpfsCidV0(metadata_representative));
+    console.log("Found NFT supply block", supply_block.hash, nft_metadata);
     let supply_info = parseSupplyRepresentative(supply_block.representative);
     let major_version: number = Number(supply_info.version.split(".")[0]);
     let minor_version: number = Number(supply_info.version.split(".")[1]);
@@ -96,8 +97,9 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
     //add to db
     await add_nft(nft, true);
     //update minter head hash
-    //
   }
+  console.log("New head", supply_crawler.head)
+  await update_minter_head_hash(minter_address, supply_crawler.head);
 }
 
 //crawl for **new** minted nfts
@@ -111,6 +113,7 @@ export async function crawl_minted(minter_address: Address, supply_hash: string,
   let new_mint_blocks: INanoBlock[] = mint_crawler.mintBlocks;
   for (let i=0; i < new_mint_blocks.length; i++) {
     let mint_block: INanoBlock = new_mint_blocks[i];
+    console.log("Found new mint block", mint_block.hash, supply_hash);
     let minted_nft: MintedNFT = {
       supply_hash,
       mint_hash: mint_block.hash,
@@ -171,6 +174,8 @@ export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) 
   //asset_crawler.head = head_hash;
   asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain)
   await asset_crawler.crawl(banano_node);
+  console.log(`Updated asset chain for minted NFT ${minted_nft.mint_hash}`);
+  console.log(`Old asset chain length ${minted_nft.asset_chain.length}, new asset chain length ${asset_crawler.assetChain.length}`);
   minted_nft.asset_chain = asset_crawler.assetChain;
   minted_nft.owner = asset_crawler.owner as Address;
   minted_nft.locked = asset_crawler.locked;

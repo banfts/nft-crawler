@@ -1,4 +1,7 @@
 import { MongoClient } from 'mongodb';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 if (!process.env.MONGO_CONNECTION_STRING!) {
   throw new Error("`MONGO_CONNECTION_STRING` missing from env variables");
