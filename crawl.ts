@@ -4,9 +4,9 @@ import { SupplyBlocksCrawler } from 'banano-nft-crawler/dist/supply-blocks-crawl
 import { MintBlocksCrawler } from 'banano-nft-crawler/dist/mint-blocks-crawler';
 import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler';
 import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply';
-import { accountToIpfsCidV0 } from 'nano-ipfs/dist';
+import { bananoIpfs } from 'banano-nft-crawler/dist/lib/banano-ipfs';
 import { BananoUtil } from '@bananocoin/bananojs';
-import { add_nft, add_minted_nft, update_minter_head_hash, Address, NFT, MintedNFT } from './database.js';
+import { add_nft, add_minted_nft, update_mint_blocks_count, update_mint_blocks_head_hash, update_minter_head_hash, Address, NFT, MintedNFT } from './database.js';
 
 import fetch from 'node-fetch';
 
@@ -51,9 +51,9 @@ function ipfs_to_metadata(ipfs_json: any): NFTMetadata | undefined {
     external_url: ipfs_json.external_url,
     animation_url: ipfs_json.animation_url,
     properties: {
-      issuer: ipfs_json.issuer,
-      supply_block_hash: ipfs_json.supply_block_hash,
-      tips: ipfs_json.tips,
+      issuer: ipfs_json.properties.issuer,
+      supply_block_hash: ipfs_json.properties.supply_block_hash,
+      tips: ipfs_json.properties.tips,
     },
   };
 }
@@ -75,15 +75,16 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
   for (let i=0; i < new_supply_blocks.length; i++) {
     let supply_block: INanoBlock = new_supply_blocks[i];
     let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
-    let nft_metadata: NFTMetadata = await get_nft_metadata(accountToIpfsCidV0(metadata_representative));
+    let nft_metadata: NFTMetadata = await get_nft_metadata(bananoIpfs.accountToIpfsCidV0(metadata_representative));
     console.log("Found NFT supply block", supply_block.hash, nft_metadata);
     let supply_info = parseSupplyRepresentative(supply_block.representative);
     let major_version: number = Number(supply_info.version.split(".")[0]);
     let minor_version: number = Number(supply_info.version.split(".")[1]);
     let patch_version: number = Number(supply_info.version.split(".")[2]);
     let nft: NFT = {
-      minter_address: supply_block.account as Address,
+      minter_address,
       supply_hash: supply_block.hash,
+      supply_block_height: Number(supply_block.height),
       metadata_representative: metadata_representative,
       nft_metadata,
       version: {
@@ -93,29 +94,33 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
       },
       max_supply: Number(supply_info.maxSupply),
       head_hash: supply_block.hash,
+      mint_blocks_count: 0,
     };
     //add to db
     await add_nft(nft, true);
-    //update minter head hash
   }
-  console.log("New head", supply_crawler.head)
+  console.log("New head", supply_crawler.head);
   await update_minter_head_hash(minter_address, supply_crawler.head);
 }
 
 //crawl for **new** minted nfts
-export async function crawl_minted(minter_address: Address, supply_hash: string, head_hash?: string) {
-  let mint_crawler = new MintBlocksCrawler(minter_address, supply_hash);
-  if (head_hash) {
-    await mint_crawler.crawlFromFrontier(banano_node, head_hash);
+export async function crawl_minted(nft: NFT) {
+  let mint_crawler = new MintBlocksCrawler(nft.minter_address, nft.supply_hash);
+  if (nft.head_hash) {
+    mint_crawler.initFromCache(BigInt(nft.supply_block_height), BigInt(nft.mint_blocks_count), `${nft.version.major_version}.${nft.version.minor_version}.${nft.version.patch_version}`, BigInt(nft.max_supply), nft.metadata_representative);
+    await mint_crawler.crawlFromFrontier(banano_node, nft.head_hash);
+    console.log("Crawling from frontier");
   } else {
     await mint_crawler.crawl(banano_node);
+    console.log("Crawling from start");
   }
   let new_mint_blocks: INanoBlock[] = mint_crawler.mintBlocks;
+  console.log(`Finished crawling for new mint blocks, ${new_mint_blocks.length} found`);
   for (let i=0; i < new_mint_blocks.length; i++) {
     let mint_block: INanoBlock = new_mint_blocks[i];
-    console.log("Found new mint block", mint_block.hash, supply_hash);
+    console.log("Found new mint block", mint_block.hash, nft.supply_hash);
     let minted_nft: MintedNFT = {
-      supply_hash,
+      supply_hash: nft.supply_hash,
       mint_hash: mint_block.hash,
       owner: "unknown",
       locked: false,
@@ -124,7 +129,10 @@ export async function crawl_minted(minter_address: Address, supply_hash: string,
       asset_chain: [],
     };
     await add_minted_nft(minted_nft, true);
+    await update_mint_blocks_count(nft.supply_hash);
   }
+  console.log("New head", mint_crawler.head);
+  await update_mint_blocks_head_hash(nft.supply_hash, mint_crawler.head);
 }
 
 export interface SpyglassBlock {
@@ -172,12 +180,12 @@ export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) 
   };
   let asset_crawler = new AssetCrawler(minter_address, block);
   //asset_crawler.head = head_hash;
-  asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain)
+  asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain);
   await asset_crawler.crawl(banano_node);
   console.log(`Updated asset chain for minted NFT ${minted_nft.mint_hash}`);
   console.log(`Old asset chain length ${minted_nft.asset_chain.length}, new asset chain length ${asset_crawler.assetChain.length}`);
   minted_nft.asset_chain = asset_crawler.assetChain;
-  minted_nft.owner = asset_crawler.owner as Address;
-  minted_nft.locked = asset_crawler.locked;
+  minted_nft.owner = asset_crawler.frontier.owner as Address;
+  minted_nft.locked = asset_crawler.frontier.locked;
   await add_minted_nft(minted_nft);
 }
