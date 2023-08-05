@@ -103,6 +103,36 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
   await update_minter_head_hash(minter_address, supply_crawler.head);
 }
 
+export async function crawl_supply_blocks_no_db(minter_address: Address, head_hash?: string) {
+  let supply_crawler = new SupplyBlocksCrawler(minter_address, head_hash);
+  let new_supply_blocks: INanoBlock[] = await supply_crawler.crawl(banano_node);
+  for (let i=0; i < new_supply_blocks.length; i++) {
+    let supply_block: INanoBlock = new_supply_blocks[i];
+    let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
+    let nft_metadata: NFTMetadata = await get_nft_metadata(bananoIpfs.accountToIpfsCidV0(metadata_representative));
+    let supply_info = parseSupplyRepresentative(supply_block.representative);
+    let major_version: number = Number(supply_info.version.split(".")[0]);
+    let minor_version: number = Number(supply_info.version.split(".")[1]);
+    let patch_version: number = Number(supply_info.version.split(".")[2]);
+    let nft: NFT = {
+      minter_address,
+      supply_hash: supply_block.hash,
+      supply_block_height: Number(supply_block.height),
+      metadata_representative: metadata_representative,
+      nft_metadata,
+      version: {
+        major_version,
+        minor_version,
+        patch_version,
+      },
+      max_supply: Number(supply_info.maxSupply),
+      head_hash: supply_block.hash,
+      mint_blocks_count: 0,
+    };
+    console.log("Found NFT supply block", nft);
+  }
+}
+
 //crawl for **new** minted nfts
 export async function crawl_minted(nft: NFT) {
   let mint_crawler = new MintBlocksCrawler(nft.minter_address, nft.supply_hash);

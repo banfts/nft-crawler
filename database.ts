@@ -154,7 +154,7 @@ export async function update_mint_blocks_count(supply_hash: string,) {
 
 export async function update_mint_blocks_head_hash(supply_hash: string, head_hash: string) {
   let nft: NFT = await get_nft(supply_hash);
-  nft.head_hash = head_hash;
+  nft.head_hash = head_hash ? head_hash : nft.head_hash;
   await info.replaceOne({
     supply_hash,
   }, nft);
