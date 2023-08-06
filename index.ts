@@ -10,6 +10,7 @@ async function main() {
     console.log(`Crawling supply blocks for ${minter.address} ${minter.name ? `(${minter.name})` : ""}`);
     await crawl_supply_blocks(minter.address, minter.head_hash);
   }
+  console.log("FINISHED NEW SUPPLY BLOCK UPDATE");
   //then get all nfts, crawl for new mint blocks
   let nfts = await get_all_nfts();
   for (let i=0; i < nfts.length; i++) {
@@ -17,6 +18,7 @@ async function main() {
     console.log(`Crawling mint blocks for NFT ${nft.nft_metadata.name} ${nft.supply_hash} (minted by ${nft.minter_address})`);
     await crawl_minted(nft);
   }
+  console.log("FINISHED NEW MINT BLOCK UPDATE");
   //then get all minted nfts, crawl for ownership updates
   let minted_nfts = await get_all_minted_nfts();
   for (let i=0; i < minted_nfts.length; i++) {
@@ -25,7 +27,8 @@ async function main() {
     let nft = nfts.find((nft) => nft.supply_hash === minted_nft.supply_hash);
     await crawl_nft(nft.minter_address, minted_nft);
   }
-  console.log("FINISHED");
+  console.log("FINISHED MINTING ASSET CHAIN UPDATE");
+  console.log("FINISHED ALL");
   //and do it all again after 15 minutes
   setTimeout(main, 15*60*1000);
 }

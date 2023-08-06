@@ -72,11 +72,24 @@ async function get_nft_metadata(ipfs_cid: string): Promise<NFTMetadata | undefin
 export async function crawl_supply_blocks(minter_address: Address, head_hash?: string) {
   let supply_crawler = new SupplyBlocksCrawler(minter_address, head_hash);
   let new_supply_blocks: INanoBlock[] = await supply_crawler.crawl(banano_node);
+  console.log(`Found ${new_supply_blocks.length} new supply blocks`);
   for (let i=0; i < new_supply_blocks.length; i++) {
     let supply_block: INanoBlock = new_supply_blocks[i];
     let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
     let nft_metadata: NFTMetadata = await get_nft_metadata(bananoIpfs.accountToIpfsCidV0(metadata_representative));
     console.log("Found NFT supply block", supply_block.hash, nft_metadata);
+    if (!nft_metadata) {
+      console.log("ERROR, COULD NOT FIND NFT METADATA");
+      nft_metadata = {
+        name: "unknown",
+        image: "unknown",
+        description: "failed to get ipfs metadata",
+        properties: {
+          issuer: minter_address,
+          supply_block_hash: supply_block.hash,
+        },
+      }
+    }
     let supply_info = parseSupplyRepresentative(supply_block.representative);
     let major_version: number = Number(supply_info.version.split(".")[0]);
     let minor_version: number = Number(supply_info.version.split(".")[1]);
@@ -99,7 +112,7 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
     //add to db
     await add_nft(nft, true);
   }
-  console.log("New head", supply_crawler.head);
+  console.log("New head", supply_crawler.head ? supply_crawler.head : "undefined probably because nothing new found");
   await update_minter_head_hash(minter_address, supply_crawler.head);
 }
 
@@ -161,7 +174,7 @@ export async function crawl_minted(nft: NFT) {
     await add_minted_nft(minted_nft, true);
     await update_mint_blocks_count(nft.supply_hash);
   }
-  console.log("New head", mint_crawler.head);
+  console.log("New head", mint_crawler.head ? mint_crawler.head : "undefined probably because nothing new found");
   await update_mint_blocks_head_hash(nft.supply_hash, mint_crawler.head);
 }
 
