@@ -5,6 +5,7 @@ import { MintBlocksCrawler } from 'banano-nft-crawler/dist/mint-blocks-crawler';
 import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler';
 import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply';
 import { bananoIpfs } from 'banano-nft-crawler/dist/lib/banano-ipfs';
+import { getBlock } from 'banano-nft-crawler/dist/lib/get-block';
 import { BananoUtil } from '@bananocoin/bananojs';
 import { add_nft, add_minted_nft, update_mint_blocks_count, update_mint_blocks_head_hash, update_minter_head_hash, Address, NFT, MintedNFT } from './database.js';
 
@@ -178,55 +179,20 @@ export async function crawl_minted(nft: NFT) {
   await update_mint_blocks_head_hash(nft.supply_hash, mint_crawler.head);
 }
 
-export interface SpyglassBlock {
-  amount: number,
-  amountRaw: `${number}`,
-  balance: `${number}`,
-  blockAccount: Address,
-  confirmed: boolean,
-  contents: {
-    account: Address,
-    balance: `${number}`,
-    link: string,
-    linkAsAccount: string,
-    previous: string,
-    representative: Address,
-    signature: string,
-    type: string,
-    work: string,
-  },
-  hash: string,
-  height: number,
-  sourceAccount: string,
-  subtype: string,
-  timestamp: number,
-}
-
 //for a specific minted nft, update owner/status/etc if needed (or add to db if new)
 export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) {
-  //mint_block needs to be INanoBlock
-  let spyglass_block: SpyglassBlock = await (await fetch(`https://api.spyglass.pw/banano/v1/block/${minted_nft.mint_hash}`)).json() as SpyglassBlock;
-  //but representative and hash are the only ones used, rest can be dummy
-  let block: INanoBlock = {
-    type: spyglass_block.contents.type as "state",
-    subtype: spyglass_block.subtype as "send" | "receive" | "open" | "change" | "epoch",
-    account: spyglass_block.contents.account,
-    amount: spyglass_block.amountRaw,
-    balance: spyglass_block.balance,
-    representative: spyglass_block.contents.representative,
-    previous: spyglass_block.contents.previous,
-    hash: spyglass_block.hash,
-    link: spyglass_block.contents.link,
-    height: `${spyglass_block.height}`,
-    work: spyglass_block.contents.work,
-    signature: spyglass_block.contents.signature,
-  };
-  let asset_crawler = new AssetCrawler(minter_address, block);
-  //asset_crawler.head = head_hash;
+  let mint_block_return = await getBlock(banano_node, minter_address, minted_nft.mint_hash);
+  if (mint_block_return.status === "error") {
+    console.log(`Error retrieving block: ${mint_block_return.error_type}: ${mint_block_return.message}`);
+    return;
+  }
+  let old_asset_chain_length: number = minted_nft.asset_chain.length;
+  let mint_block = mint_block_return.value;
+  let asset_crawler = new AssetCrawler(minter_address, mint_block);
   asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain);
   await asset_crawler.crawl(banano_node);
   console.log(`Updated asset chain for minted NFT ${minted_nft.mint_hash}`);
-  console.log(`Old asset chain length ${minted_nft.asset_chain.length}, new asset chain length ${asset_crawler.assetChain.length}`);
+  console.log(`Old asset chain length ${old_asset_chain_length}, new asset chain length ${asset_crawler.assetChain.length}`);
   minted_nft.asset_chain = asset_crawler.assetChain;
   minted_nft.owner = asset_crawler.frontier.owner as Address;
   minted_nft.locked = asset_crawler.frontier.locked;
