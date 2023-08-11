@@ -196,5 +196,7 @@ export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) 
   minted_nft.asset_chain = asset_crawler.assetChain;
   minted_nft.owner = asset_crawler.frontier.owner as Address;
   minted_nft.locked = asset_crawler.frontier.locked;
+  //prevent wasting bandwidth when there are no changes
+  if (old_asset_chain_length === asset_crawler.assetChain.length) return;
   await add_minted_nft(minted_nft);
 }
