@@ -29,8 +29,8 @@ async function main() {
   }
   console.log("FINISHED MINTING ASSET CHAIN UPDATE");
   console.log("FINISHED ALL");
-  //and do it all again after 15 minutes
-  setTimeout(main, 15*60*1000);
+  //and do it all again after 2 minutes
+  setTimeout(main, 2*60*1000);
 }
 
 //wait for db to connect
