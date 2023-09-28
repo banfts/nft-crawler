@@ -1,5 +1,8 @@
 import { crawl_supply_blocks, crawl_nft, crawl_minted, crawl_supply_blocks_no_db } from './crawl.js';
 import { add_minters, get_all_minters, get_all_nfts, get_all_minted_nfts } from './database.js';
+import { start } from './web.js';
+
+start();
 
 async function main() {
   await add_minters();
