@@ -1,11 +1,28 @@
 {
+  "name": "nft-crawler",
+  "type": "module",
+  "scripts": {
+    "start": "npm run build && node ./dist/index.js",
+    "dev": "node ./dist/index.js",
+    "build": "del-cli dist/** && tsc",
+    "tests": "node ./dist/tests.js",
+    "clear:logs": "del-cli .logger/**"
+  },
   "dependencies": {
-    "banano-nft-crawler": "^2.0.3",
-    "dotenv": "^16.3.1",
-    "mongodb": "^5.7.0",
-    "node-fetch": "^2.6.6"
+    "@bananocoin/bananojs": "^2.10.0",
+    "agenda": "^5.0.0",
+    "banano-nft-crawler": "^2.1.1",
+    "mongodb": "^6.1.0",
+    "nano-account-crawler": "^2.0.1",
+    "reconnecting-websocket": "^4.4.0",
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2"
   },
   "devDependencies": {
-    "@types/bs58": "^4.0.1"
+    "@types/bs58": "^4.0.2",
+    "@types/ws": "^8.5.6",
+    "del-cli": "^5.1.0",
+    "dotenv": "^16.3.1",
+    "typescript": "^5.2.2"
   }
 }

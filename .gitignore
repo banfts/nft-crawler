@@ -1,7 +1,10 @@
 .env
 *.js
 node_modules/
+dist/
+.logger/
 .replit
 .upm/
 .config/
+.replit
 replit.nix

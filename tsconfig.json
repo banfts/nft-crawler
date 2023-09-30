@@ -1,18 +1,19 @@
 {
   "compilerOptions": {
-    "target": "esnext",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "typeRoots": [
-      "./node_modules/@types",
-    ],
-    "esModuleInterop": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    
+    "target": "ES2020",
+    "module": "Node16",
     "skipLibCheck": true,
+    
+    "moduleResolution": "Node16",
+    "resolveJsonModule": true,
+    
+    "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
   },
-  "exclude": [
-    "node_modules",
-    ".build"
-  ]
+  "include": ["./src/"],
+  "exclude": [ "node_modules/", "./dist/" ],
 }
+

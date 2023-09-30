@@ -1,8 +1,10 @@
-import { IAssetBlock } from 'banano-nft-crawler/dist/interfaces/asset-block';
+import { nftDb } from './mongo.js';
+
+import { asset_rep_to_mint_hash, get_minters_from_api } from './utils.js';
+
+import { IAssetBlock } from 'banano-nft-crawler/dist/interfaces/asset-block.js';
 import type { Collection } from 'mongodb';
-import { connect } from './mongo.js';
 import type { NFTMetadata } from './crawl.js';
-import minters_array from './minters.json';
 
 export type Address = `ban_${string}`;
 
@@ -44,31 +46,23 @@ export interface MintedNFT {
   metadata_representative: Address, //keep in two places for convenience
   mint_type: "change" | "send",
   asset_chain: IAssetBlock[], //history of the asset
-  //
 }
 
-let minters: Collection;
-let info: Collection;
-let ownership: Collection;
-
-connect().then((db) => {
-  //minters info (Minter interface)
-  minters = db.collection("minters");
-  //nft info (NFT interface)
-  info = db.collection("info");
-  //nft ownership info (MintedNFT interface)
-  ownership = db.collection("ownership");
-});
+const info = nftDb.collection('info');
+const minters = nftDb.collection('minters');
+const ownership = nftDb.collection('ownership');
 
 export async function get_all_minters(): Promise<Minter[]> {
   return (await (await minters.find({})).toArray()) as unknown as Minter[];
 }
 
 export async function add_minters() {
+  const minters_array = await get_minters_from_api();
   let current_minters: Minter[] = await get_all_minters(); //Minter[], almost
   for (let i=0; i < minters_array.length; i++) {
     let minter: Minter = minters_array[i] as Minter;
     console.log(`Adding minter ${minter.address} ${minter.name ? `(${minter.name})` : ""}`);
+    //can be more effecient query wise probably, not that it matters
     let found = current_minters.find((m) => m.address === minter.address);
     if (found) {
       minter.head_hash = found.head_hash; //preserve head hash!!!
@@ -88,7 +82,7 @@ export async function add_minters() {
   }
 }
 
-async function get_minter(minter_address: string): Promise<Minter> {
+async function get_minter(minter_address: Address): Promise<Minter> {
   return await minters.findOne({
     address: minter_address,
   }, {
@@ -131,6 +125,7 @@ export async function add_nft(nft: NFT, skip_find?: boolean) {
     return;
   }
   //true if already exists, false otherwise
+  //can be more efficient query-wise, doesn't really matter though
   let replace = await get_nft(nft.supply_hash);
   if (replace) {
     await info.replaceOne({
@@ -183,6 +178,7 @@ export async function add_minted_nft(minted_nft: MintedNFT, skip_find?: boolean)
     return;
   }
   //true if already exists, false otherwise
+  //can be more efficient query-wise, doesn't really matter though
   let replace = await get_minted_nft(minted_nft.mint_hash);
   if (replace) {
     await ownership.replaceOne({
@@ -191,4 +187,17 @@ export async function add_minted_nft(minted_nft: MintedNFT, skip_find?: boolean)
   } else {
     await ownership.insertOne(minted_nft);
   }
+}
+
+export async function find_minted_by_asset_rep(asset_rep: Address): Promise<MintedNFT> {
+  const mint_hash = asset_rep_to_mint_hash(asset_rep);
+  const found = await ownership.findOne({
+    mint_hash,
+  }, {
+    projection: {
+      //exclude _id
+      _id: 0,
+    },
+  }) as unknown as MintedNFT;
+  return found;
 }

@@ -1,15 +1,13 @@
-import { NanoNode } from 'nano-account-crawler/dist/nano-node';
-import type { INanoBlock } from 'nano-account-crawler/dist/nano-interfaces';
-import { SupplyBlocksCrawler } from 'banano-nft-crawler/dist/supply-blocks-crawler';
-import { MintBlocksCrawler } from 'banano-nft-crawler/dist/mint-blocks-crawler';
-import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler';
-import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply';
-import { bananoIpfs } from 'banano-nft-crawler/dist/lib/banano-ipfs';
-import { getBlock } from 'banano-nft-crawler/dist/lib/get-block';
+import { NanoNode } from 'nano-account-crawler/dist/nano-node.js';
+import type { INanoBlock } from 'nano-account-crawler/dist/nano-interfaces.js';
+import { SupplyBlocksCrawler } from 'banano-nft-crawler/dist/supply-blocks-crawler.js';
+import { MintBlocksCrawler } from 'banano-nft-crawler/dist/mint-blocks-crawler.js';
+import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler.js';
+import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply.js';
+import { bananoIpfs } from 'banano-nft-crawler/dist/lib/banano-ipfs.js';
+import { getBlock } from 'banano-nft-crawler/dist/lib/get-block.js';
 import { BananoUtil } from '@bananocoin/bananojs';
 import { add_nft, add_minted_nft, update_mint_blocks_count, update_mint_blocks_head_hash, update_minter_head_hash, Address, NFT, MintedNFT } from './database.js';
-
-import fetch from 'node-fetch';
 
 let banano_node = new NanoNode("https://booster.dev-ptera.com/banano-rpc", fetch);
 
