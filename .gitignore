@@ -5,3 +5,4 @@ node_modules/
 .upm/
 .config/
 replit.nix
+minters.json

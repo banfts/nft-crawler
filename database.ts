@@ -3,6 +3,8 @@ import type { Collection } from 'mongodb';
 import { connect } from './mongo.js';
 import type { NFTMetadata } from './crawl.js';
 import minters_array from './minters.json';
+import { asset_rep_to_mint_hash } from './utils.js';
+import { log } from './log.js';
 
 export type Address = `ban_${string}`;
 
@@ -52,6 +54,7 @@ let info: Collection;
 let ownership: Collection;
 
 connect().then((db) => {
+  log("Connected to database");
   //minters info (Minter interface)
   minters = db.collection("minters");
   //nft info (NFT interface)
@@ -68,7 +71,7 @@ export async function add_minters() {
   let current_minters: Minter[] = await get_all_minters(); //Minter[], almost
   for (let i=0; i < minters_array.length; i++) {
     let minter: Minter = minters_array[i] as Minter;
-    console.log(`Adding minter ${minter.address} ${minter.name ? `(${minter.name})` : ""}`);
+    log(`Adding minter ${minter.address} ${minter.name ? `(${minter.name})` : ""}`);
     let found = current_minters.find((m) => m.address === minter.address);
     if (found) {
       minter.head_hash = found.head_hash; //preserve head hash!!!
@@ -173,6 +176,19 @@ export async function get_minted_nft(mint_hash: string): Promise<MintedNFT> {
       _id: 0,
     },
   }) as unknown as MintedNFT;
+}
+
+export async function find_minted_by_asset_rep(asset_rep: Address): Promise<MintedNFT> {
+  const mint_hash = asset_rep_to_mint_hash(asset_rep);
+  const found = await ownership.findOne({
+    mint_hash,
+  }, {
+    projection: {
+      //exclude _id
+      _id: 0,
+    },
+  }) as unknown as MintedNFT;
+  return found;
 }
 
 export async function add_minted_nft(minted_nft: MintedNFT, skip_find?: boolean) {

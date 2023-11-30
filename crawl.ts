@@ -8,6 +8,7 @@ import { bananoIpfs } from 'banano-nft-crawler/dist/lib/banano-ipfs';
 import { getBlock } from 'banano-nft-crawler/dist/lib/get-block';
 import { BananoUtil } from '@bananocoin/bananojs';
 import { add_nft, add_minted_nft, update_mint_blocks_count, update_mint_blocks_head_hash, update_minter_head_hash, Address, NFT, MintedNFT } from './database.js';
+import { log } from './log.js';
 
 import fetch from 'node-fetch';
 
@@ -73,14 +74,14 @@ async function get_nft_metadata(ipfs_cid: string): Promise<NFTMetadata | undefin
 export async function crawl_supply_blocks(minter_address: Address, head_hash?: string) {
   let supply_crawler = new SupplyBlocksCrawler(minter_address, head_hash);
   let new_supply_blocks: INanoBlock[] = await supply_crawler.crawl(banano_node);
-  console.log(`Found ${new_supply_blocks.length} new supply blocks`);
+  log(`Found ${new_supply_blocks.length} new supply blocks`);
   for (let i=0; i < new_supply_blocks.length; i++) {
     let supply_block: INanoBlock = new_supply_blocks[i];
     let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
     let nft_metadata: NFTMetadata = await get_nft_metadata(bananoIpfs.accountToIpfsCidV0(metadata_representative));
-    console.log("Found NFT supply block", supply_block.hash, nft_metadata);
+    log("Found NFT supply block", supply_block.hash, nft_metadata);
     if (!nft_metadata) {
-      console.log("ERROR, COULD NOT FIND NFT METADATA");
+      log("ERROR, COULD NOT FIND NFT METADATA");
       nft_metadata = {
         name: "unknown",
         image: "unknown",
@@ -113,7 +114,7 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
     //add to db
     await add_nft(nft, true);
   }
-  console.log("New head", supply_crawler.head ? supply_crawler.head : "undefined probably because nothing new found");
+  log("New head", supply_crawler.head ? supply_crawler.head : "undefined probably because nothing new found");
   await update_minter_head_hash(minter_address, supply_crawler.head);
 }
 
@@ -143,7 +144,7 @@ export async function crawl_supply_blocks_no_db(minter_address: Address, head_ha
       head_hash: supply_block.hash,
       mint_blocks_count: 0,
     };
-    console.log("Found NFT supply block", nft);
+    log("Found NFT supply block", nft);
   }
 }
 
@@ -153,16 +154,16 @@ export async function crawl_minted(nft: NFT) {
   if (nft.head_hash) {
     mint_crawler.initFromCache(BigInt(nft.supply_block_height), BigInt(nft.mint_blocks_count), `${nft.version.major_version}.${nft.version.minor_version}.${nft.version.patch_version}`, BigInt(nft.max_supply), nft.metadata_representative);
     await mint_crawler.crawlFromFrontier(banano_node, nft.head_hash);
-    console.log("Crawling from frontier");
+    log("Crawling from frontier");
   } else {
     await mint_crawler.crawl(banano_node);
-    console.log("Crawling from start");
+    log("Crawling from start");
   }
   let new_mint_blocks: INanoBlock[] = mint_crawler.mintBlocks;
-  console.log(`Finished crawling for new mint blocks, ${new_mint_blocks.length} found`);
+  log(`Finished crawling for new mint blocks, ${new_mint_blocks.length} found`);
   for (let i=0; i < new_mint_blocks.length; i++) {
     let mint_block: INanoBlock = new_mint_blocks[i];
-    console.log("Found new mint block", mint_block.hash, nft.supply_hash);
+    log("Found new mint block", mint_block.hash, nft.supply_hash);
     let minted_nft: MintedNFT = {
       supply_hash: nft.supply_hash,
       mint_hash: mint_block.hash,
@@ -175,7 +176,7 @@ export async function crawl_minted(nft: NFT) {
     await add_minted_nft(minted_nft, true);
     await update_mint_blocks_count(nft.supply_hash);
   }
-  console.log("New head", mint_crawler.head ? mint_crawler.head : "undefined probably because nothing new found");
+  log("New head", mint_crawler.head ? mint_crawler.head : "undefined probably because nothing new found");
   await update_mint_blocks_head_hash(nft.supply_hash, mint_crawler.head);
 }
 
@@ -183,7 +184,7 @@ export async function crawl_minted(nft: NFT) {
 export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) {
   let mint_block_return = await getBlock(banano_node, minter_address, minted_nft.mint_hash);
   if (mint_block_return.status === "error") {
-    console.log(`Error retrieving block: ${mint_block_return.error_type}: ${mint_block_return.message}`);
+    log(`Error retrieving block: ${mint_block_return.error_type}: ${mint_block_return.message}`);
     return;
   }
   let old_asset_chain_length: number = minted_nft.asset_chain.length;
@@ -191,8 +192,8 @@ export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) 
   let asset_crawler = new AssetCrawler(minter_address, mint_block);
   asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain);
   await asset_crawler.crawl(banano_node);
-  console.log(`Updated asset chain for minted NFT ${minted_nft.mint_hash}`);
-  console.log(`Old asset chain length ${old_asset_chain_length}, new asset chain length ${asset_crawler.assetChain.length}`);
+  log(`Updated asset chain for minted NFT ${minted_nft.mint_hash}`);
+  log(`Old asset chain length ${old_asset_chain_length}, new asset chain length ${asset_crawler.assetChain.length}`);
   minted_nft.asset_chain = asset_crawler.assetChain;
   minted_nft.owner = asset_crawler.frontier.owner as Address;
   minted_nft.locked = asset_crawler.frontier.locked;
