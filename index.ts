@@ -1,5 +1,5 @@
 import { crawl_supply_blocks, crawl_nft, crawl_minted, crawl_supply_blocks_no_db } from './crawl.js';
-import { add_minters, get_all_minters, get_all_nfts, get_all_minted_nfts } from './database.js';
+import { add_minters, get_all_minters, get_all_nfts, get_all_minted_nfts_cursor, MintedNFT } from './database.js';
 import { websocket_listen } from './websocket.js';
 import { log } from './log.js';
 
@@ -22,9 +22,10 @@ async function main() {
   }
   log("FINISHED NEW MINT BLOCK UPDATE");
   //then get all minted nfts, crawl for ownership updates
-  let minted_nfts = await get_all_minted_nfts();
-  for (let i=0; i < minted_nfts.length; i++) {
-    let minted_nft = minted_nfts[i];
+  let minted_nfts_cursor = await get_all_minted_nfts_cursor();
+  const count = await minted_nfts_cursor.count();
+  for (let i=0; i < count; i++) {
+    let minted_nft = await minted_nfts_cursor.next() as unknown as MintedNFT;
     log(`Crawling asset chain for minted NFT ${minted_nft.mint_hash} (${minted_nft.supply_hash})`);
     let nft = nfts.find((nft) => nft.supply_hash === minted_nft.supply_hash);
     await crawl_nft(nft.minter_address, minted_nft);

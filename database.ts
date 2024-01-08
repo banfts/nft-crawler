@@ -167,6 +167,10 @@ export async function get_all_minted_nfts(): Promise<MintedNFT[]> {
   return (await (await ownership.find({})).toArray()) as unknown as MintedNFT[];
 }
 
+export async function get_all_minted_nfts_cursor(): Promise<any> {
+  return await ownership.find({});
+}
+
 export async function get_minted_nft(mint_hash: string): Promise<MintedNFT> {
   return await ownership.findOne({
     mint_hash,
