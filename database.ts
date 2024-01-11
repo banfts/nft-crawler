@@ -103,11 +103,15 @@ async function get_minter(minter_address: string): Promise<Minter> {
 
 //yeah I know there's a better way to do this with like $set or something
 export async function update_minter_head_hash(minter_address: Address, head_hash: string) {
-  let minter: Minter = await get_minter(minter_address);
-  minter.head_hash = head_hash ? head_hash : minter.head_hash;
-  await minters.replaceOne({
-    address: minter_address,
-  }, minter);
+  if (head_hash) {
+    await minters.updateOne({
+      address: minter_address,
+    }, {
+      $set: {
+        head_hash,
+      }
+    });
+  }
 }
 
 export async function get_all_nfts(): Promise<NFT[]> {
@@ -125,19 +129,17 @@ export async function get_nft(supply_hash: string): Promise<NFT> {
   }) as unknown as NFT;
 }
 
-export async function add_nft(nft: NFT, skip_find?: boolean) {
+export async function add_nft(nft: NFT, insert_only?: boolean) {
   //insert or replace to `info` collection
-  if (skip_find) {
-    //just insert
-    await info.insertOne(nft);
-    return;
-  }
-  //true if already exists, false otherwise
   let replace = await get_nft(nft.supply_hash);
   if (replace) {
-    await info.replaceOne({
-      supply_hash: nft.supply_hash,
-    }, nft);
+    if (insert_only) {
+      throw Error("Insert only but supply nft already exists");
+    } else {
+      await info.replaceOne({
+        supply_hash: nft.supply_hash,
+      }, nft);
+    }
   } else {
     await info.insertOne(nft);
   }

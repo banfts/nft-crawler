@@ -9,9 +9,13 @@ async function main() {
   for (let i=0; i < minters.length; i++) {
     let minter = minters[i];
     log(`Crawling supply blocks for ${minter.address} ${minter.name ? `(${minter.name})` : ""}`);
-    await crawl_supply_blocks(minter.address, minter.head_hash);
+    if (minter.head_hash) {
+      await crawl_supply_blocks(minter.address, minter.head_hash);
+    } else {
+      await crawl_supply_blocks(minter.address);
+    }
   }
-  log("FINISHED NEW SUPPLY BLOCK UPDATE");
+  log("\\033[0;32mFINISHED NEW SUPPLY BLOCK UPDATE\\033[0m", Date.now());
   //then get all nfts, crawl for new mint blocks
   let nfts = await get_all_nfts();
   for (let i=0; i < nfts.length; i++) {
@@ -19,30 +23,29 @@ async function main() {
     log(`Crawling mint blocks for NFT ${nft.nft_metadata.name} ${nft.supply_hash} (minted by ${nft.minter_address})`);
     await crawl_minted(nft);
   }
-  log("FINISHED NEW MINT BLOCK UPDATE");
+  log("\\033[0;32mFINISHED NEW MINT BLOCK UPDATE\\033[0m", Date.now());
   //then get all minted nfts, crawl for ownership updates
   //see: https://stackoverflow.com/questions/44248108/mongodb-error-getmore-command-failed-cursor-not-found#44250410
+  let new_cursor_time: number = Date.now();
+  let minted_nfts_cursor = (await get_all_minted_nfts_cursor()).sort({ _id: -1 }).batchSize(120);
   let processed: number = 0;
-  while (true) {
-    let minted_nfts_cursor = (await get_all_minted_nfts_cursor()).sort({ _id: 1 }).skip(processed);
-    try {
-      while (minted_nfts_cursor.hasNext()) {
-        let minted_nft = await minted_nfts_cursor.next() as unknown as MintedNFT;
-        log(`Crawling asset chain for minted NFT ${minted_nft.mint_hash} (${minted_nft.supply_hash})`);
-        let nft = nfts.find((nft) => nft.supply_hash === minted_nft.supply_hash);
-        await crawl_nft(nft.minter_address, minted_nft);
-        processed++;
-      }
-      break;
-    } catch (e) {
-      console.log(e);
+  while (minted_nfts_cursor.hasNext()) {
+    let minted_nft = await minted_nfts_cursor.next() as unknown as MintedNFT;
+    log(`Crawling asset chain for minted NFT ${minted_nft.mint_hash} (${minted_nft.supply_hash})`);
+    let nft = nfts.find((nft) => nft.supply_hash === minted_nft.supply_hash);
+    await crawl_nft(nft.minter_address, minted_nft);
+    processed++;
+    if (Date.now() > new_cursor_time + 6 * 60 * 1000) {
+      log("\\033[0;32mNew cursor\\033[0m");
+      new_cursor_time = Date.now();
+      minted_nfts_cursor = (await get_all_minted_nfts_cursor()).sort({ _id: -1 }).skip(processed).batchSize(120);
     }
   }
-  log("FINISHED MINTING ASSET CHAIN UPDATE");
+  log("FINISHED MINTING ASSET CHAIN UPDATE", Date.now());
   log("FINISHED ALL");
   //and do it all again after 2 minutes
-  setTimeout(main, 2*60*1000);
+  setTimeout(main, 4 * 60 * 1000);
 }
 
 //wait for db to connect
-setTimeout(main, 4000);
+setTimeout(main, 5000);

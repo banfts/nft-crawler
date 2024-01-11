@@ -149,7 +149,7 @@ export async function crawl_supply_blocks_no_db(minter_address: Address, head_ha
 //crawl for **new** minted nfts
 export async function crawl_minted(nft: NFT) {
   let mint_crawler = new MintBlocksCrawler(nft.minter_address, nft.supply_hash);
-  if (nft.head_hash) {
+  if (nft.head_hash !== nft.supply_hash) {
     mint_crawler.initFromCache(BigInt(nft.supply_block_height), BigInt(await count_mint_blocks(nft.supply_hash)), `${nft.version.major_version}.${nft.version.minor_version}.${nft.version.patch_version}`, BigInt(nft.max_supply), nft.metadata_representative);
     await mint_crawler.crawlFromFrontier(banano_node, nft.head_hash);
     log("Crawling from frontier");
@@ -173,9 +173,13 @@ export async function crawl_minted(nft: NFT) {
     };
     await add_minted_nft(minted_nft, true);
   }
-  log("New head", mint_crawler.head ? mint_crawler.head : "undefined probably because nothing new found");
-  if (mint_crawler.head) {
-    await update_mint_blocks_head_hash(nft.supply_hash, mint_crawler.head);
+  let new_head = mint_crawler.head;
+  if (!new_head && new_mint_blocks.length > 0) {
+    new_head = new_mint_blocks[new_mint_blocks.length - 1].hash;
+  }
+  log("New head", new_head ? new_head : "undefined probably because nothing new found");
+  if (new_head) {
+    await update_mint_blocks_head_hash(nft.supply_hash, new_head);
   }
 }
 
