@@ -11,5 +11,5 @@ const client: MongoClient = new MongoClient(process.env.MONGO_CONNECTION_STRING!
 
 export async function connect() {
   await client.connect();
-  return client.db("nfts");
+  return client.db("crawler");
 }

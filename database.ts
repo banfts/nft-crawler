@@ -34,7 +34,6 @@ export interface NFT {
   //stuff known from the supply block
   version: NFTVersion,
   max_supply: number, //max supply of 0 means infinite supply
-  mint_blocks_count: number, //amount of mint blocks
 }
 
 export interface MintedNFT {
@@ -144,28 +143,27 @@ export async function add_nft(nft: NFT, skip_find?: boolean) {
   }
 }
 
-export async function update_mint_blocks_count(supply_hash: string,) {
-  let nft: NFT = await get_nft(supply_hash);
-  let mint_blocks_count: number = (await (await ownership.find({
+export async function count_mint_blocks(supply_hash: string): Promise<number> {
+  return await ownership.countDocuments({
     supply_hash,
-  })).toArray()).length;
-  nft.mint_blocks_count = mint_blocks_count;
-  await info.replaceOne({
-    supply_hash,
-  }, nft);
+  });
 }
 
 export async function update_mint_blocks_head_hash(supply_hash: string, head_hash: string) {
   let nft: NFT = await get_nft(supply_hash);
   nft.head_hash = head_hash ? head_hash : nft.head_hash;
-  await info.replaceOne({
+  await info.updateOne({
     supply_hash,
-  }, nft);
+  }, {
+    $set: {
+      head_hash,
+    },
+  });
 }
 
-export async function get_all_minted_nfts(): Promise<MintedNFT[]> {
+/*export async function get_all_minted_nfts(): Promise<MintedNFT[]> {
   return (await (await ownership.find({})).toArray()) as unknown as MintedNFT[];
-}
+}*/
 
 export async function get_all_minted_nfts_cursor(): Promise<any> {
   return await ownership.find({});
@@ -195,20 +193,19 @@ export async function find_minted_by_asset_rep(asset_rep: Address): Promise<Mint
   return found;
 }
 
-export async function add_minted_nft(minted_nft: MintedNFT, skip_find?: boolean) {
+export async function add_minted_nft(minted_nft: MintedNFT, insert_only?: boolean) {
   //insert or replace to `ownership` collection
-  if (skip_find) {
-    //just insert
-    await ownership.insertOne(minted_nft);
-    return;
-  }
-  //true if already exists, false otherwise
   let replace = await get_minted_nft(minted_nft.mint_hash);
   if (replace) {
-    await ownership.replaceOne({
-      mint_hash: minted_nft.mint_hash,
-    }, minted_nft);
+    if (insert_only) {
+      throw Error("Despite expected that minted nft is new and not in db (insert only), the minted nft already is in the database!");
+    } else {
+      await ownership.replaceOne({
+        mint_hash: minted_nft.mint_hash,
+      }, minted_nft);
+    }
   } else {
+    //just insert
     await ownership.insertOne(minted_nft);
   }
 }

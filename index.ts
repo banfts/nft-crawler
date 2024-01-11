@@ -1,6 +1,5 @@
 import { crawl_supply_blocks, crawl_nft, crawl_minted, crawl_supply_blocks_no_db } from './crawl.js';
 import { add_minters, get_all_minters, get_all_nfts, get_all_minted_nfts_cursor, MintedNFT } from './database.js';
-import { websocket_listen } from './websocket.js';
 import { log } from './log.js';
 
 async function main() {
@@ -22,13 +21,22 @@ async function main() {
   }
   log("FINISHED NEW MINT BLOCK UPDATE");
   //then get all minted nfts, crawl for ownership updates
-  let minted_nfts_cursor = await get_all_minted_nfts_cursor();
-  const count = await minted_nfts_cursor.count();
-  for (let i=0; i < count; i++) {
-    let minted_nft = await minted_nfts_cursor.next() as unknown as MintedNFT;
-    log(`Crawling asset chain for minted NFT ${minted_nft.mint_hash} (${minted_nft.supply_hash})`);
-    let nft = nfts.find((nft) => nft.supply_hash === minted_nft.supply_hash);
-    await crawl_nft(nft.minter_address, minted_nft);
+  //see: https://stackoverflow.com/questions/44248108/mongodb-error-getmore-command-failed-cursor-not-found#44250410
+  let processed: number = 0;
+  while (true) {
+    let minted_nfts_cursor = (await get_all_minted_nfts_cursor()).sort({ _id: 1 }).skip(processed);
+    try {
+      while (minted_nfts_cursor.hasNext()) {
+        let minted_nft = await minted_nfts_cursor.next() as unknown as MintedNFT;
+        log(`Crawling asset chain for minted NFT ${minted_nft.mint_hash} (${minted_nft.supply_hash})`);
+        let nft = nfts.find((nft) => nft.supply_hash === minted_nft.supply_hash);
+        await crawl_nft(nft.minter_address, minted_nft);
+        processed++;
+      }
+      break;
+    } catch (e) {
+      console.log(e);
+    }
   }
   log("FINISHED MINTING ASSET CHAIN UPDATE");
   log("FINISHED ALL");
@@ -38,4 +46,3 @@ async function main() {
 
 //wait for db to connect
 setTimeout(main, 4000);
-setTimeout(websocket_listen, 4000);
