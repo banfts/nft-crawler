@@ -196,18 +196,20 @@ export async function find_minted_by_asset_rep(asset_rep: Address): Promise<Mint
 }
 
 export async function add_minted_nft(minted_nft: MintedNFT, insert_only?: boolean) {
-  //insert or replace to `ownership` collection
-  let replace = await get_minted_nft(minted_nft.mint_hash);
-  if (replace) {
+  // Check if the minted NFT already exists
+  let existingNFT = await get_minted_nft(minted_nft.mint_hash);
+
+  if (existingNFT) {
     if (insert_only) {
-      throw Error("Despite expected that minted nft is new and not in db (insert only), the minted nft already is in the database!");
+      // Log a message instead of throwing an error
+      log(`Minted NFT ${minted_nft.mint_hash} already exists in the database. Skipping insertion.`);
     } else {
-      await ownership.replaceOne({
-        mint_hash: minted_nft.mint_hash,
-      }, minted_nft);
+      // Update the existing record
+      await ownership.replaceOne({ mint_hash: minted_nft.mint_hash }, minted_nft);
     }
   } else {
-    //just insert
+    // Insert new minted NFT
     await ownership.insertOne(minted_nft);
   }
 }
+
