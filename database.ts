@@ -103,15 +103,13 @@ async function get_minter(minter_address: string): Promise<Minter> {
 
 //yeah I know there's a better way to do this with like $set or something
 export async function update_minter_head_hash(minter_address: Address, head_hash: string) {
-  if (head_hash) {
-    await minters.updateOne({
-      address: minter_address,
-    }, {
-      $set: {
-        head_hash,
-      }
-    });
-  }
+  await minters.updateOne({
+    address: minter_address,
+  }, {
+    $set: {
+      head_hash,
+    }
+  });
 }
 
 export async function get_all_nfts(): Promise<NFT[]> {
