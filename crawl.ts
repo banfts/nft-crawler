@@ -1,50 +1,99 @@
-import { NanoNode } from 'nano-account-crawler/dist/nano-node';
-import type { INanoBlock } from 'nano-account-crawler/dist/nano-interfaces';
-import { SupplyBlocksCrawler } from 'banano-nft-crawler/dist/supply-blocks-crawler';
-import { MintBlocksCrawler } from 'banano-nft-crawler/dist/mint-blocks-crawler';
-import { AssetCrawler } from 'banano-nft-crawler/dist/asset-crawler';
-import { parseSupplyRepresentative } from 'banano-nft-crawler/dist/block-parsers/supply';
-import { bananoIpfs } from 'banano-nft-crawler/dist/lib/banano-ipfs';
-import { getBlock } from 'banano-nft-crawler/dist/lib/get-block';
-import { BananoUtil } from '@bananocoin/bananojs';
-import { add_nft, add_minted_nft, update_mint_blocks_head_hash, update_minter_head_hash, count_mint_blocks, Address, NFT, MintedNFT } from './database.js';
-import { log } from './log.js';
+import { NanoNode } from "nano-account-crawler/dist/nano-node";
+import type { INanoBlock } from "nano-account-crawler/dist/nano-interfaces";
+import { SupplyBlocksCrawler } from "banano-nft-crawler/dist/supply-blocks-crawler";
+import { MintBlocksCrawler } from "banano-nft-crawler/dist/mint-blocks-crawler";
+import { AssetCrawler } from "banano-nft-crawler/dist/asset-crawler";
+import { parseSupplyRepresentative } from "banano-nft-crawler/dist/block-parsers/supply";
+import { bananoIpfs } from "banano-nft-crawler/dist/lib/banano-ipfs";
+import { getBlock } from "banano-nft-crawler/dist/lib/get-block";
+import { BananoUtil } from "@bananocoin/bananojs";
+import {
+  add_nft,
+  add_minted_nft,
+  update_mint_blocks_head_hash,
+  update_minter_head_hash,
+  count_mint_blocks,
+  Address,
+  NFT,
+  MintedNFT,
+} from "./database.js";
+import { log } from "./log.js";
 
-import fetch from 'node-fetch';
+import fetch from "node-fetch";
 
-let banano_node = new NanoNode("https://booster.dev-ptera.com/banano-rpc", fetch);
+// List of RPC endpoints
+const rpcEndpoints = [
+  "https://booster.dev-ptera.com/banano-rpc",
+  "https://api.banano.trade/proxy"
+];
+let currentRpcIndex = 0;
+
+// Function to get the current RPC endpoint
+function getCurrentRpcEndpoint() {
+  return rpcEndpoints[currentRpcIndex];
+}
+
+// Function to switch to the next RPC endpoint
+function switchRpcEndpoint() {
+  currentRpcIndex = (currentRpcIndex + 1) % rpcEndpoints.length;
+  log(`Switched to RPC Endpoint: ${getCurrentRpcEndpoint()}`);
+}
+
+// Update banano_node initialization to use the getCurrentRpcEndpoint function
+let banano_node = new NanoNode(
+  getCurrentRpcEndpoint(),
+  fetch
+);
 
 export interface NFTTips {
-  name: string,
-  account: string,
+  name: string;
+  account: string;
 }
 
 export interface NFTProperties {
-  issuer: string,
-  supply_block_hash: string,
-  tips?: NFTTips[],
+  issuer: string;
+  supply_block_hash: string;
+  tips?: NFTTips[];
 }
 
 export interface NFTMetadata {
-  name: string,
-  image: string,
-  description: string,
-  external_url?: string,
-  animation_url?: string,
-  properties: NFTProperties,
+  name: string;
+  image: string;
+  description: string;
+  external_url?: string;
+  animation_url?: string;
+  properties: NFTProperties;
 }
 
 function ipfs_to_metadata(ipfs_json: any): NFTMetadata | undefined {
   //required
-  if (typeof ipfs_json.name !== "string" || typeof ipfs_json.description !== "string" || typeof ipfs_json.description !== "string") return undefined;
-  if (typeof ipfs_json.properties?.issuer !== "string" || typeof ipfs_json.properties?.supply_block_hash !== "string") return undefined;
+  if (
+    typeof ipfs_json.name !== "string" ||
+    typeof ipfs_json.description !== "string" ||
+    typeof ipfs_json.description !== "string"
+  )
+    return undefined;
+  if (
+    typeof ipfs_json.properties?.issuer !== "string" ||
+    typeof ipfs_json.properties?.supply_block_hash !== "string"
+  )
+    return undefined;
   //optional
-  if ((typeof ipfs_json.external_url !== "string" && typeof ipfs_json.external_url !== "undefined") || (typeof ipfs_json.animation_url !== "string" && typeof ipfs_json.animation_url !== "undefined")) return undefined;
+  if (
+    (typeof ipfs_json.external_url !== "string" &&
+      typeof ipfs_json.external_url !== "undefined") ||
+    (typeof ipfs_json.animation_url !== "string" &&
+      typeof ipfs_json.animation_url !== "undefined")
+  )
+    return undefined;
   //tips
   if (ipfs_json.properties?.tips) {
-    if (!ipfs_json.properties.tips.every(
-      (tip) => typeof tip.name === "string" && typeof tip.account === "string"
-    )) return undefined;
+    if (
+      !ipfs_json.properties.tips.every(
+        (tip) => typeof tip.name === "string" && typeof tip.account === "string"
+      )
+    )
+      return undefined;
   }
   return {
     name: ipfs_json.name,
@@ -60,7 +109,9 @@ function ipfs_to_metadata(ipfs_json: any): NFTMetadata | undefined {
   };
 }
 
-async function get_nft_metadata(ipfs_cid: string): Promise<NFTMetadata | undefined> {
+async function get_nft_metadata(
+  ipfs_cid: string
+): Promise<NFTMetadata | undefined> {
   let ipfs_url = `https://gateway.ipfs.io/ipfs/${ipfs_cid}#x-ipfs-companion-no-redirect`;
   let resp = await fetch(ipfs_url);
   try {
@@ -70,27 +121,70 @@ async function get_nft_metadata(ipfs_cid: string): Promise<NFTMetadata | undefin
   }
 }
 
+// Function for batch processing of NFT ownership updates
+export async function crawlOwnershipUpdates(nfts, mintedNftsCursor) {
+  const batch = [];
+  while (batch.length < 120 && await mintedNftsCursor.hasNext()) {
+      const minted_nft = await mintedNftsCursor.next() as unknown as MintedNFT;
+      const nft = nfts.find(n => n.supply_hash === minted_nft.supply_hash);
+      if (nft) {
+          batch.push(crawl_nft(nft.minter_address, minted_nft));
+      }
+  }
+  return Promise.all(batch);
+}
+
+async function withRetry(task, maxAttempts = 3, delay = 1000) {
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    try {
+      return await task();
+    } catch (error) {
+      switchRpcEndpoint(); // Switch to the next RPC endpoint
+      attempts++;
+      log(`Attempt ${attempts} failed: ${error.message}`);
+      if (attempts >= maxAttempts) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 //get (new) supply blocks (nfts) for a minter, get metadata, add to db
-export async function crawl_supply_blocks(minter_address: Address, head_hash?: string) {
+// Parallel fetching of NFT metadata for supply blocks
+export async function crawl_supply_blocks(
+  minter_address: Address,
+  head_hash?: string
+) {
   let supply_crawler = new SupplyBlocksCrawler(minter_address, head_hash);
-  let new_supply_blocks: INanoBlock[] = await supply_crawler.crawl(banano_node);
+  let new_supply_blocks: INanoBlock[] = await withRetry(() =>
+    supply_crawler.crawl(banano_node)
+  );
   log(`Found ${new_supply_blocks.length} new supply blocks`);
-  for (let i=0; i < new_supply_blocks.length; i++) {
-    let supply_block: INanoBlock = new_supply_blocks[i];
-    let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
-    let nft_metadata: NFTMetadata = await get_nft_metadata(bananoIpfs.accountToIpfsCidV0(metadata_representative));
-    log("Found NFT supply block", supply_block.hash, nft_metadata);
+
+  const metadataFetchPromises = new_supply_blocks.map((supply_block, i) => {
+    let metadata_representative: Address = supply_crawler
+      .metadataRepresentatives[i] as Address;
+    return get_nft_metadata(
+      bananoIpfs.accountToIpfsCidV0(metadata_representative)
+    ).then((nft_metadata) => ({
+      supply_block,
+      nft_metadata,
+      metadata_representative,
+    }));
+  });
+
+  const supplyBlocksWithMetadata = await Promise.all(metadataFetchPromises);
+
+  for (const {
+    supply_block,
+    nft_metadata,
+    metadata_representative,
+  } of supplyBlocksWithMetadata) {
     if (!nft_metadata) {
       log("ERROR, COULD NOT FIND NFT METADATA");
-      nft_metadata = {
-        name: "unknown",
-        image: "unknown",
-        description: "failed to get ipfs metadata",
-        properties: {
-          issuer: minter_address,
-          supply_block_hash: supply_block.hash,
-        },
-      }
+      continue; // Skip this block if metadata is missing
     }
     let supply_info = parseSupplyRepresentative(supply_block.representative);
     let major_version: number = Number(supply_info.version.split(".")[0]);
@@ -100,7 +194,7 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
       minter_address,
       supply_hash: supply_block.hash,
       supply_block_height: Number(supply_block.height),
-      metadata_representative: metadata_representative,
+      metadata_representative,
       nft_metadata,
       version: {
         major_version,
@@ -113,17 +207,28 @@ export async function crawl_supply_blocks(minter_address: Address, head_hash?: s
     //add to db
     await add_nft(nft, true);
   }
-  log("New head", supply_crawler.head ? supply_crawler.head : "undefined probably because nothing new found");
+  log(
+    "New head",
+    supply_crawler.head
+      ? supply_crawler.head
+      : "undefined probably because nothing new found"
+  );
   await update_minter_head_hash(minter_address, supply_crawler.head);
 }
 
-export async function crawl_supply_blocks_no_db(minter_address: Address, head_hash?: string) {
+export async function crawl_supply_blocks_no_db(
+  minter_address: Address,
+  head_hash?: string
+) {
   let supply_crawler = new SupplyBlocksCrawler(minter_address, head_hash);
   let new_supply_blocks: INanoBlock[] = await supply_crawler.crawl(banano_node);
-  for (let i=0; i < new_supply_blocks.length; i++) {
+  for (let i = 0; i < new_supply_blocks.length; i++) {
     let supply_block: INanoBlock = new_supply_blocks[i];
-    let metadata_representative: Address = supply_crawler.metadataRepresentatives[i] as Address;
-    let nft_metadata: NFTMetadata = await get_nft_metadata(bananoIpfs.accountToIpfsCidV0(metadata_representative));
+    let metadata_representative: Address = supply_crawler
+      .metadataRepresentatives[i] as Address;
+    let nft_metadata: NFTMetadata = await get_nft_metadata(
+      bananoIpfs.accountToIpfsCidV0(metadata_representative)
+    );
     let supply_info = parseSupplyRepresentative(supply_block.representative);
     let major_version: number = Number(supply_info.version.split(".")[0]);
     let minor_version: number = Number(supply_info.version.split(".")[1]);
@@ -146,22 +251,32 @@ export async function crawl_supply_blocks_no_db(minter_address: Address, head_ha
   }
 }
 
-//crawl for **new** minted nfts
+// Parallel processing of new mint blocks with retry logic
 export async function crawl_minted(nft: NFT) {
   let mint_crawler = new MintBlocksCrawler(nft.minter_address, nft.supply_hash);
-  if (nft.head_hash !== nft.supply_hash) {
-    mint_crawler.initFromCache(BigInt(nft.supply_block_height), BigInt(await count_mint_blocks(nft.supply_hash)), `${nft.version.major_version}.${nft.version.minor_version}.${nft.version.patch_version}`, BigInt(nft.max_supply), nft.metadata_representative);
-    await mint_crawler.crawlFromFrontier(banano_node, nft.head_hash);
-    log("Crawling from frontier");
-  } else {
-    await mint_crawler.crawl(banano_node);
-    log("Crawling from start");
-  }
+
+  // Wrapping crawl logic with retry
+  await withRetry(async () => {
+    if (nft.head_hash !== nft.supply_hash) {
+      mint_crawler.initFromCache(
+        BigInt(nft.supply_block_height),
+        BigInt(await count_mint_blocks(nft.supply_hash)),
+        `${nft.version.major_version}.${nft.version.minor_version}.${nft.version.patch_version}`,
+        BigInt(nft.max_supply),
+        nft.metadata_representative
+      );
+      await mint_crawler.crawlFromFrontier(banano_node, nft.head_hash);
+      log("Crawling from frontier");
+    } else {
+      await mint_crawler.crawl(banano_node);
+      log("Crawling from start");
+    }
+  });
+
   let new_mint_blocks: INanoBlock[] = mint_crawler.mintBlocks;
   log(`Finished crawling for new mint blocks, ${new_mint_blocks.length} found`);
-  for (let i=0; i < new_mint_blocks.length; i++) {
-    let mint_block: INanoBlock = new_mint_blocks[i];
-    log("Found new mint block", mint_block.hash, nft.supply_hash);
+
+  const addMintedNFTPromises = new_mint_blocks.map((mint_block) => {
     let minted_nft: MintedNFT = {
       supply_hash: nft.supply_hash,
       mint_hash: mint_block.hash,
@@ -171,32 +286,52 @@ export async function crawl_minted(nft: NFT) {
       mint_type: mint_block.subtype as "send" | "change",
       asset_chain: [],
     };
-    await add_minted_nft(minted_nft, true);
-  }
+    return add_minted_nft(minted_nft, true);
+  });
+
+  await Promise.all(addMintedNFTPromises);
+
   let new_head = mint_crawler.head;
   if (!new_head && new_mint_blocks.length > 0) {
     new_head = new_mint_blocks[new_mint_blocks.length - 1].hash;
   }
-  log("New head", new_head ? new_head : "undefined probably because nothing new found");
+  log(
+    "New head",
+    new_head ? new_head : "undefined probably because nothing new found"
+  );
   if (new_head) {
     await update_mint_blocks_head_hash(nft.supply_hash, new_head);
   }
 }
 
 //for a specific minted nft, update owner/status/etc if needed (or add to db if new)
-export async function crawl_nft(minter_address: Address, minted_nft: MintedNFT) {
-  let mint_block_return = await getBlock(banano_node, minter_address, minted_nft.mint_hash);
+export async function crawl_nft(
+  minter_address: Address,
+  minted_nft: MintedNFT
+) {
+  let mint_block_return = await getBlock(
+    banano_node,
+    minter_address,
+    minted_nft.mint_hash
+  );
   if (mint_block_return.status === "error") {
-    log(`Error retrieving block: ${mint_block_return.error_type}: ${mint_block_return.message}`);
+    log(
+      `Error retrieving block: ${mint_block_return.error_type}: ${mint_block_return.message}`
+    );
     return;
   }
   let old_asset_chain_length: number = minted_nft.asset_chain.length;
   let mint_block = mint_block_return.value;
   let asset_crawler = new AssetCrawler(minter_address, mint_block);
-  asset_crawler.initFromCache(BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address, minted_nft.asset_chain);
+  asset_crawler.initFromCache(
+    BananoUtil.getAccount(minted_nft.mint_hash, "ban_") as Address,
+    minted_nft.asset_chain
+  );
   await asset_crawler.crawl(banano_node);
   log(`Updated asset chain for minted NFT ${minted_nft.mint_hash}`);
-  log(`Old asset chain length ${old_asset_chain_length}, new asset chain length ${asset_crawler.assetChain.length}`);
+  log(
+    `Old asset chain length ${old_asset_chain_length}, new asset chain length ${asset_crawler.assetChain.length}`
+  );
   minted_nft.asset_chain = asset_crawler.assetChain;
   minted_nft.owner = asset_crawler.frontier.owner as Address;
   minted_nft.locked = asset_crawler.frontier.locked;
