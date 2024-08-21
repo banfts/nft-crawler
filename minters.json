@@ -82,6 +82,12 @@
     "address": "ban_3dns37ri6qbde37du4hm6qc75hhpwdgueuc5ie8zuxbdsefti4p3prkg4s38"
   },
   {
+    "name": "JungleTV NFTs",
+    "description": "Official JungleTV NFTs on the Banano network",
+    "external_url": "https://jungletv.live/",
+    "address": "ban_1jtnfts3ned6x7mjp8851az48k14m7jkc1mq964a3ru17m86dpwa4mqtqci1"
+  },
+  {
     "description": "Someone used this address to test out minting Banano NFTs",
     "address": "ban_1andpjnk13eqamt9qokchzt5pp8p5dsdwhzwu1r9q7nu1tro6beaeh1obiq3"
   },
